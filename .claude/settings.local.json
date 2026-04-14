@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.miamibeachfl.gov)",
+      "WebFetch(domain:miamibeach.novusagenda.com)",
+      "Bash(curl -s -L \"https://www.miamibeachfl.gov/city-hall/city-clerk/meetings-and-agendas/\")",
+      "WebFetch(domain:miamibeachfl.primegov.com)",
+      "WebFetch(domain:cityclerkagendas.azurewebsites.net)",
+      "Bash(curl -s -L \"https://miamibeachfl.primegov.com/public/portal\")",
+      "Bash(curl -s -L \"https://miamibeachfl.primegov.com/api/v2/PublicPortal/ListUpcomingMeetings\")",
+      "Bash(curl -s -L \"https://miamibeachfl.primegov.com/api/v2/PublicPortal/ListArchivedMeetings?year=2025\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(f''''Total meetings: {len\\(data\\)}''''\\); [print\\(f''''  {m[\"\"date\"\"]} - {m[\"\"title\"\"]} \\(id={m[\"\"id\"\"]}, docs={len\\(m.get\\(\"\"documentList\"\",[]\\)\\)}\\)''''\\) for m in data[:15]]\")",
+      "Bash(curl -s -L \"https://miamibeachfl.primegov.com/api/v2/PublicPortal/ListArchivedMeetings?year=2024\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(f''''Total meetings: {len\\(data\\)}''''\\); [print\\(f''''  {m[\"\"date\"\"]} - {m[\"\"title\"\"]} \\(id={m[\"\"id\"\"]}\\)''''\\) for m in data[:10]]\")",
+      "Bash(pip3 install:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''app.py''\\).read\\(\\)\\); print\\(''app.py: syntax OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''pipeline.py''\\).read\\(\\)\\); print\\(''pipeline.py: syntax OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''cli.py''\\).read\\(\\)\\); print\\(''cli.py: syntax OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''crawler/primegov.py''\\).read\\(\\)\\); print\\(''crawler/primegov.py: syntax OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('app.py: syntax OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(grep -E \"\\\\.gitignore|\\\\.git$|python-version|runtime\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('app.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('pipeline.py'\\).read\\(\\)\\); print\\('pipeline.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('crawler/primegov.py'\\).read\\(\\)\\); print\\('primegov.py OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('app.py OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('pipeline.py'\\).read\\(\\)\\); print\\('pipeline.py OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('crawler/primegov.py'\\).read\\(\\)\\); print\\('primegov.py OK'\\)\")"
+    ]
+  }
+}

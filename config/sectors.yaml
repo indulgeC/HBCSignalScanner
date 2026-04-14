@@ -1,0 +1,62 @@
+sectors:
+  stormwater:
+    keywords:
+      - stormwater
+      - storm water
+      - storm-water
+      - drainage
+      - flood control
+      - flood mitigation
+      - runoff
+      - outfall
+      - pump station
+      - pumping station
+      - basin
+      - culvert
+      - neighborhood improvement
+      - water quality
+      - resiliency
+      - resilience
+      - green infrastructure
+      - retention
+      - detention
+      - swale
+      - sea level rise
+      - tidal valve
+      - backflow preventer
+
+  water:
+    keywords:
+      - drinking water
+      - potable water
+      - water main
+      - water treatment
+      - water supply
+      - water distribution
+      - water line
+      - water pipe
+      - water meter
+      - water plant
+      - water utility
+      - boil water
+      - water pressure
+      - water tank
+      - water storage
+
+  sewer:
+    keywords:
+      - sewer
+      - wastewater
+      - waste water
+      - sanitary sewer
+      - force main
+      - lift station
+      - collection system
+      - sewer line
+      - sewer main
+      - sewer lateral
+      - sewage
+      - inflow and infiltration
+      - I&I
+      - WWTP
+      - sewer rehabilitation

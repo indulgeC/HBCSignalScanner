@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+# Virtual env / packaging
+*.egg-info/
+build/
+dist/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Runtime data (regenerated each scan)
+data/raw/
+data/output/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Streamlit secrets (never commit API keys)
+.streamlit/secrets.toml
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Misc / junk
+{config/
+
+# Logs
+*.log

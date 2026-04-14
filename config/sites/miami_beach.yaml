@@ -1,0 +1,66 @@
+name: miami_beach
+display_name: "City of Miami Beach"
+base_url: "https://www.miamibeachfl.gov"
+default_agency: "City of Miami Beach"
+default_geography: "Miami Beach, FL"
+
+# ── PrimeGov API configuration ──────────────────────────────────────
+# The meetings & agendas page embeds PrimeGov via iframe:
+#   https://miamibeachfl.primegov.com/public/portal
+# API endpoints used:
+#   /api/v2/PublicPortal/ListUpcomingMeetings
+#   /api/v2/PublicPortal/ListArchivedMeetings?year=YYYY
+#   /Portal/Meeting?compiledMeetingDocumentFileId={id}
+primegov_api_base: "https://miamibeachfl.primegov.com"
+crawler_mode: "primegov"
+
+allowed_domains:
+  - "miamibeachfl.gov"
+  - "www.miamibeachfl.gov"
+  - "miamibeachfl.primegov.com"
+
+seeds:
+  - url: "https://www.miamibeachfl.gov/city-hall/city-clerk/meetings-and-agendas/"
+    category: meetings
+    label: "Meetings & Agendas"
+  - url: "https://www.miamibeachfl.gov/city-hall/procurement/bid-opportunities/"
+    category: procurement
+    label: "Bid Opportunities"
+  - url: "https://www.miamibeachfl.gov/city-hall/procurement/future-bid-opportunities/"
+    category: procurement
+    label: "Future Bid Opportunities"
+  - url: "https://www.miamibeachfl.gov/city-hall/cip/"
+    category: cip
+    label: "Capital Improvement Program"
+  - url: "https://www.miamibeachfl.gov/city-hall/finance/budget/"
+    category: budget
+    label: "Budget"
+
+priority_patterns:
+  - "/city-clerk/"
+  - "/procurement/"
+  - "/cip/"
+  - "/budget/"
+  - "/capital/"
+  - "primegov.com"
+  - "/agenda"
+  - "/minutes"
+  - "/resolution"
+
+ignore_patterns:
+  - "/careers/"
+  - "/jobs/"
+  - "/parks-and-rec/"
+  - "/visitors/"
+  - "/residents/"
+  - "/contact/"
+  - "/news/"
+  - ".jpg"
+  - ".png"
+  - ".gif"
+  - ".css"
+  - ".js"
+
+max_depth: 3
+max_pages: 200
+request_delay_seconds: 1.0
