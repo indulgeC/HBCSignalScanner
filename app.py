@@ -254,7 +254,7 @@ with st.sidebar:
             "Relevance threshold",
             min_value=0.01, max_value=0.5, value=0.05, step=0.01,
         )
-        use_llm = st.checkbox("Enable AI enrichment", value=True)
+        use_llm = st.checkbox("Enable AI enrichment", value=False)
 
         if use_llm:
             llm_api_key = st.text_input(
