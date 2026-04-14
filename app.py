@@ -310,12 +310,24 @@ with tab_scan:
     # ── Run pipeline ─────────────────────────────────────────────────
     if run_btn and selected_sites and selected_sectors:
         with st.status("Scanning...", expanded=True) as status:
-            st.write(f"Sites: {', '.join(selected_sites)}")
-            st.write(f"Sectors: {', '.join(selected_sectors)}")
+            st.write(f"**Sites:** {', '.join(selected_sites)}")
+            st.write(f"**Sectors:** {', '.join(selected_sectors)}")
             if selected_years:
-                st.write(f"Years: {', '.join(str(y) for y in selected_years)}")
+                st.write(f"**Years:** {', '.join(str(y) for y in selected_years)}")
             else:
-                st.write("Year: Upcoming meetings")
+                st.write("**Year:** Upcoming meetings")
+
+            # Progress bar + live status message
+            progress_bar = st.progress(0.0, text="Initializing...")
+            status_text = st.empty()
+
+            def update_progress(pct: float, msg: str):
+                try:
+                    safe_pct = max(0.0, min(1.0, float(pct)))
+                    progress_bar.progress(safe_pct, text=msg)
+                    status_text.info(msg)
+                except Exception:
+                    pass
 
             output_dir = os.path.join("data", "output")
             os.makedirs(output_dir, exist_ok=True)
@@ -331,14 +343,18 @@ with tab_scan:
                 years=selected_years or None,
                 llm_api_key=llm_api_key if use_llm else "",
                 llm_model=llm_model if use_llm else "",
+                progress_callback=update_progress,
             )
 
             try:
                 result_path = pipeline.run(output_path=output_path)
                 st.session_state["signals"] = pipeline.signals
                 st.session_state["output_path"] = result_path
+                progress_bar.progress(1.0, text=f"Complete — {len(pipeline.signals)} signals")
+                status_text.success(f"✅ Found {len(pipeline.signals)} signals")
                 status.update(label=f"✅ Complete — {len(pipeline.signals)} signals", state="complete")
             except Exception as e:
+                status_text.error(f"❌ {e}")
                 status.update(label=f"❌ Error: {e}", state="error")
                 st.error(str(e))
 
