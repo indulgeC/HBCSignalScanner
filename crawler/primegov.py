@@ -14,7 +14,7 @@ import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import List, Optional
+from typing import Callable, List, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -59,6 +59,7 @@ class PrimeGovCrawler:
         year: Optional[int] = None,
         years: Optional[List[int]] = None,
         max_pages: Optional[int] = None,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
     ):
         self.cfg = site_config
         # Normalize year/years into a single list (or None = upcoming only)
@@ -69,6 +70,7 @@ class PrimeGovCrawler:
         else:
             self.years = None
         self.max_pages = max_pages or site_config.get("max_pages", 200)
+        self.progress_callback = progress_callback
         self.api_base = site_config.get(
             "primegov_api_base", self.DEFAULT_API_BASE
         )
@@ -90,10 +92,20 @@ class PrimeGovCrawler:
 
     def crawl(self) -> List[CrawlResult]:
         """Fetch meetings and their HTML agendas."""
+        if self.progress_callback:
+            self.progress_callback(0.0, "Listing meetings...")
+
         meetings = self._list_meetings()
         logger.info(
             "PrimeGov: found %d meetings (years=%s)", len(meetings), self.years
         )
+
+        total = min(len(meetings), self.max_pages)
+        if self.progress_callback:
+            self.progress_callback(
+                0.0,
+                f"Found {len(meetings)} meetings, fetching up to {total} agendas...",
+            )
 
         count = 0
         for meeting in meetings:
@@ -150,6 +162,12 @@ class PrimeGovCrawler:
                     "[%d/%d] %s — %s (doc_id=%s)",
                     count, self.max_pages, date_str, title, html_doc_id,
                 )
+
+                if self.progress_callback and total > 0:
+                    self.progress_callback(
+                        count / total,
+                        f"Fetched {count}/{total} agendas ({date_str})",
+                    )
 
             except requests.RequestException as e:
                 logger.warning("Error fetching agenda %s: %s", agenda_url, e)

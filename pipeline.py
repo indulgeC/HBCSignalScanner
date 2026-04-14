@@ -6,7 +6,7 @@ Pipeline — orchestrates the full flow:
 from __future__ import annotations
 import logging
 import os
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import yaml
 
@@ -77,6 +77,7 @@ class SignalPipeline:
         years: Optional[List[int]] = None,
         llm_api_key: str = "",
         llm_model: str = "",
+        progress_callback: Optional[Callable[[float, str], None]] = None,
     ):
         self.site_names = site_names
         self.sectors = sectors
@@ -95,12 +96,23 @@ class SignalPipeline:
             self.years = None
         self.llm_api_key = llm_api_key
         self.llm_model = llm_model
+        self.progress_callback = progress_callback
 
         self.sectors_config = load_sectors_config(config_dir)
         self.keyword_map = load_sector_keywords(self.sectors_config)
 
         self.signals: List[Signal] = []
         self.projects: list = []
+
+    # ── Progress reporting ────────────────────────────────────────────
+
+    def _progress(self, pct: float, msg: str):
+        """Report progress to an optional UI callback."""
+        if self.progress_callback:
+            try:
+                self.progress_callback(max(0.0, min(1.0, pct)), msg)
+            except Exception as e:
+                logger.debug("progress_callback error: %s", e)
 
     # ── Main entry point ──────────────────────────────────────────────
 
@@ -110,11 +122,17 @@ class SignalPipeline:
             "Pipeline starting — sites=%s  sectors=%s",
             self.site_names, self.sectors,
         )
+        self._progress(0.02, "Starting pipeline...")
 
-        for site_name in self.site_names:
-            self._process_site(site_name)
+        n_sites = max(len(self.site_names), 1)
+        site_budget = 0.85 / n_sites   # sites occupy 2% – 87% of progress
+
+        for i, site_name in enumerate(self.site_names):
+            base = 0.02 + i * site_budget
+            self._process_site(site_name, base_pct=base, budget=site_budget)
 
         # ── Phase 3: Project matching, merging, momentum ─────────────
+        self._progress(0.88, f"Merging {len(self.signals)} signals into projects...")
         if self.merge_projects:
             logger.info("Phase 3: grouping %d raw signals into projects...", len(self.signals))
             self.signals, self.projects = track_and_merge(
@@ -140,16 +158,21 @@ class SignalPipeline:
         ))
 
         # Export
+        self._progress(0.95, f"Exporting {len(self.signals)} signals to Excel...")
         export_excel(self.signals, output_path, include_audit=True)
         csv_path = output_path.rsplit(".", 1)[0] + ".csv"
         export_csv(self.signals, csv_path)
 
         logger.info("Pipeline complete — %d signals", len(self.signals))
+        self._progress(1.0, f"Done — {len(self.signals)} signals")
         return output_path
 
     # ── Per-site processing ───────────────────────────────────────────
 
-    def _process_site(self, site_name: str):
+    def _process_site(self, site_name: str, base_pct: float = 0.0, budget: float = 1.0):
+        """Process one site. Within this site's progress budget:
+           crawl = 70%, parse = 5%, filter = 5%, classify = 20%.
+        """
         site_cfg = load_site_config(site_name, self.config_dir)
         if self.max_pages_override:
             site_cfg["max_pages"] = self.max_pages_override
@@ -157,23 +180,39 @@ class SignalPipeline:
         default_agency = site_cfg.get("default_agency", "")
         default_geo = site_cfg.get("default_geography", "")
 
+        self._progress(base_pct, f"[{site_name}] Starting crawl...")
+
         # ── 1. CRAWL ─────────────────────────────────────────────────
         raw_dir = os.path.join(self.data_dir, "raw", site_name)
         crawler_mode = site_cfg.get("crawler_mode", "default")
+
+        # Sub-callback: map crawler's 0–1 progress into this site's crawl slice
+        def crawl_cb(local_pct: float, msg: str):
+            overall = base_pct + budget * 0.70 * max(0.0, min(1.0, local_pct))
+            self._progress(overall, f"[{site_name}] {msg}")
 
         if crawler_mode == "primegov":
             crawler = PrimeGovCrawler(
                 site_cfg,
                 years=self.years,
                 max_pages=self.max_pages_override,
+                progress_callback=crawl_cb,
             )
         else:
-            crawler = SiteCrawler(site_cfg, data_dir=raw_dir)
+            crawler = SiteCrawler(
+                site_cfg,
+                data_dir=raw_dir,
+                progress_callback=crawl_cb,
+            )
 
         crawl_results = crawler.crawl()
         logger.info("Site %s: crawled %d pages/files (mode=%s)", site_name, len(crawl_results), crawler_mode)
 
         # ── 2. PARSE & SPLIT ─────────────────────────────────────────
+        self._progress(
+            base_pct + budget * 0.70,
+            f"[{site_name}] Parsing {len(crawl_results)} pages...",
+        )
         all_chunks: list[tuple[ParsedChunk, CrawlResult]] = []
         for cr in crawl_results:
             chunks = self._parse_result(cr)
@@ -183,6 +222,10 @@ class SignalPipeline:
         logger.info("Site %s: %d chunks extracted", site_name, len(all_chunks))
 
         # ── 3. FILTER by relevance ───────────────────────────────────
+        self._progress(
+            base_pct + budget * 0.75,
+            f"[{site_name}] Filtering {len(all_chunks)} chunks by relevance...",
+        )
         relevant: list[tuple[ParsedChunk, CrawlResult, str, float]] = []
         for chunk, cr in all_chunks:
             ok, best_sector, score = is_relevant(
@@ -196,9 +239,22 @@ class SignalPipeline:
                      site_name, len(relevant), self.relevance_threshold)
 
         # ── 4. CLASSIFY + ENRICH each chunk ──────────────────────────
-        for chunk, cr, sector, rel_score in relevant:
+        n_rel = len(relevant)
+        classify_label = "Classifying + AI enriching" if self.use_llm else "Classifying"
+        self._progress(
+            base_pct + budget * 0.80,
+            f"[{site_name}] {classify_label} {n_rel} signals...",
+        )
+        for i, (chunk, cr, sector, rel_score) in enumerate(relevant):
             signal = self._build_signal(chunk, cr, sector, rel_score, default_agency, default_geo)
             self.signals.append(signal)
+            # Update progress periodically (every few items) to avoid UI spam
+            if n_rel > 0 and (i % 3 == 0 or i == n_rel - 1):
+                local = 0.80 + 0.20 * ((i + 1) / n_rel)
+                self._progress(
+                    base_pct + budget * local,
+                    f"[{site_name}] {classify_label} {i+1}/{n_rel}...",
+                )
 
     # ── Parse dispatcher ──────────────────────────────────────────────
 

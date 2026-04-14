@@ -26,7 +26,9 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('crawler/primegov.py'\\).read\\(\\)\\); print\\('primegov.py OK'\\)\")",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('app.py OK'\\)\")",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('pipeline.py'\\).read\\(\\)\\); print\\('pipeline.py OK'\\)\")",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\('crawler/primegov.py'\\).read\\(\\)\\); print\\('primegov.py OK'\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('crawler/primegov.py'\\).read\\(\\)\\); print\\('primegov.py OK'\\)\")",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['app.py', 'pipeline.py', 'crawler/discover.py', 'crawler/primegov.py']]; print\\('OK'\\)\")",
+      "Bash(python3 -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['app.py', 'pipeline.py', 'crawler/discover.py', 'crawler/primegov.py']]; print\\('OK'\\)\")"
     ]
   }
 }

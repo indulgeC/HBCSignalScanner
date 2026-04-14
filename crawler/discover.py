@@ -10,7 +10,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Set
+from typing import Callable, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -39,7 +39,12 @@ class CrawlResult:
 class SiteCrawler:
     """Breadth-first crawler bounded by allowed_domains and max depth."""
 
-    def __init__(self, site_config: dict, data_dir: str = "data/raw"):
+    def __init__(
+        self,
+        site_config: dict,
+        data_dir: str = "data/raw",
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+    ):
         self.cfg = site_config
         self.allowed = set(site_config.get("allowed_domains", []))
         self.priority_pats = site_config.get("priority_patterns", [])
@@ -48,6 +53,7 @@ class SiteCrawler:
         self.max_pages = site_config.get("max_pages", 200)
         self.delay = site_config.get("request_delay_seconds", 1.5)
         self.data_dir = data_dir
+        self.progress_callback = progress_callback
         os.makedirs(data_dir, exist_ok=True)
 
         self.session = requests.Session()
@@ -72,6 +78,9 @@ class SiteCrawler:
             cat = seed.get("category", "") if isinstance(seed, dict) else ""
             queue.append((url, cat, 0))
 
+        if self.progress_callback:
+            self.progress_callback(0.0, f"Starting crawl (max {self.max_pages} pages)...")
+
         while queue and len(self.results) < self.max_pages:
             url, cat, depth = queue.pop(0)
             norm = self._normalize(url)
@@ -95,6 +104,13 @@ class SiteCrawler:
                 result.content_type[:30],
             )
 
+            if self.progress_callback and self.max_pages > 0:
+                n = len(self.results)
+                self.progress_callback(
+                    min(1.0, n / self.max_pages),
+                    f"Crawled {n}/{self.max_pages} pages (depth={depth})",
+                )
+
             # Extract child links from HTML pages
             if "html" in result.content_type and depth < self.max_depth:
                 child_links = self._extract_links(result.html, result.final_url)
@@ -111,6 +127,8 @@ class SiteCrawler:
             time.sleep(self.delay)
 
         logger.info("Crawl complete: %d results", len(self.results))
+        if self.progress_callback:
+            self.progress_callback(1.0, f"Crawl complete: {len(self.results)} pages")
         return self.results
 
     # ── Fetching ──────────────────────────────────────────────────────
