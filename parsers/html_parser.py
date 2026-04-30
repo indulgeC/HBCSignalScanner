@@ -4,11 +4,14 @@ from crawled HTML pages.
 """
 
 from __future__ import annotations
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from bs4 import BeautifulSoup, Tag
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,6 +63,7 @@ def parse_html(html: str, url: str, category: str = "") -> List[ParsedChunk]:
     body_text = (main or soup).get_text(separator="\n", strip=True)
 
     if len(body_text) < 50:
+        logger.debug("parse_html: skipping %s — body too short (%d chars)", url, len(body_text))
         return []
 
     return [ParsedChunk(

@@ -75,6 +75,22 @@ def signals_to_df(signals: list[Signal]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _validate_site_form(base_url: str, domains: list[str], seeds: list[dict]) -> list[str]:
+    """Return a list of human-readable error messages, empty if config is OK."""
+    errors = []
+    if not (base_url or "").strip():
+        errors.append("Base URL is required.")
+    if not domains:
+        errors.append(
+            "Allowed Domains is required. The crawler rejects every URL "
+            "(including seeds) when this is empty. "
+            "For Key Biscayne, e.g.: `keybiscayne.fl.gov, www.keybiscayne.fl.gov`."
+        )
+    if not seeds:
+        errors.append("At least one Seed URL is required.")
+    return errors
+
+
 # ── Emoji mappings for visual distinction ──────────────────────────────────
 
 EMOJI_MAP = {
@@ -266,9 +282,9 @@ with st.sidebar:
             llm_model = st.selectbox(
                 "AI Model",
                 options=[
-                    "claude-sonnet-4-20250514",
+                    "claude-sonnet-4-6",
                     "claude-haiku-4-5-20251001",
-                    "claude-opus-4-20250514",
+                    "claude-opus-4-7",
                 ],
                 index=0,
                 help="Model used for signal enrichment",
@@ -570,9 +586,10 @@ with tab_sites:
 
             submitted_new = st.form_submit_button("💾 Save New Site", type="primary")
 
-            if submitted_new and new_name:
-                # Build config dict
+            if submitted_new:
+                # Parse seeds, tracking lines that didn't yield a URL
                 seeds = []
+                skipped_seed_lines = []
                 for line in (new_seeds_text or "").strip().splitlines():
                     parts = [p.strip() for p in line.split("|")]
                     if len(parts) >= 1 and parts[0]:
@@ -582,28 +599,46 @@ with tab_sites:
                         if len(parts) >= 3:
                             seed["label"] = parts[2]
                         seeds.append(seed)
+                    elif line.strip():
+                        skipped_seed_lines.append(line)
 
                 domains = [d.strip() for d in (new_domains_text or "").split(",") if d.strip()]
 
-                cfg = {
-                    "name": new_name,
-                    "display_name": new_display or new_name,
-                    "base_url": new_base_url,
-                    "default_agency": new_agency,
-                    "default_geography": new_geo,
-                    "crawler_mode": new_crawler_mode,
-                    "allowed_domains": domains,
-                    "seeds": seeds,
-                    "max_depth": new_max_depth,
-                    "max_pages": new_max_pages,
-                    "request_delay_seconds": new_delay,
-                }
-                if new_crawler_mode == "primegov" and new_primegov_base:
-                    cfg["primegov_api_base"] = new_primegov_base
+                errors = _validate_site_form(
+                    base_url=new_base_url, domains=domains, seeds=seeds,
+                )
+                if not (new_name or "").strip():
+                    errors.insert(0, "Site ID is required.")
 
-                save_site_config(new_name, cfg)
-                st.success(f"Site '{new_name}' saved!")
-                st.rerun()
+                if errors:
+                    for msg in errors:
+                        st.error(msg)
+                else:
+                    if skipped_seed_lines:
+                        st.warning(
+                            f"Skipped {len(skipped_seed_lines)} unparseable seed line(s): "
+                            f"{skipped_seed_lines}"
+                        )
+
+                    cfg = {
+                        "name": new_name,
+                        "display_name": new_display or new_name,
+                        "base_url": new_base_url,
+                        "default_agency": new_agency,
+                        "default_geography": new_geo,
+                        "crawler_mode": new_crawler_mode,
+                        "allowed_domains": domains,
+                        "seeds": seeds,
+                        "max_depth": new_max_depth,
+                        "max_pages": new_max_pages,
+                        "request_delay_seconds": new_delay,
+                    }
+                    if new_crawler_mode == "primegov" and new_primegov_base:
+                        cfg["primegov_api_base"] = new_primegov_base
+
+                    save_site_config(new_name, cfg)
+                    st.success(f"Site '{new_name}' saved!")
+                    st.rerun()
 
     # ── Edit existing site ───────────────────────────────────────────
     with site_tab_edit:
@@ -619,10 +654,10 @@ with tab_sites:
                 with st.form("edit_site_form"):
                     st.subheader(f"Edit: {cfg.get('display_name', edit_site)}")
 
-                    e_display = st.text_input("Display Name", value=cfg.get("display_name", ""), key="e_display")
-                    e_base_url = st.text_input("Base URL", value=cfg.get("base_url", ""), key="e_base_url")
-                    e_agency = st.text_input("Default Agency", value=cfg.get("default_agency", ""), key="e_agency")
-                    e_geo = st.text_input("Default Geography", value=cfg.get("default_geography", ""), key="e_geo")
+                    e_display = st.text_input("Display Name", value=cfg.get("display_name", ""), key=f"e_display_{edit_site}")
+                    e_base_url = st.text_input("Base URL", value=cfg.get("base_url", ""), key=f"e_base_url_{edit_site}")
+                    e_agency = st.text_input("Default Agency", value=cfg.get("default_agency", ""), key=f"e_agency_{edit_site}")
+                    e_geo = st.text_input("Default Geography", value=cfg.get("default_geography", ""), key=f"e_geo_{edit_site}")
 
                     st.divider()
                     st.markdown("**Crawler Mode**")
@@ -630,20 +665,20 @@ with tab_sites:
                         "Crawler Mode",
                         options=["primegov", "default"],
                         index=0 if cfg.get("crawler_mode") == "primegov" else 1,
-                        key="e_crawler_mode",
+                        key=f"e_crawler_mode_{edit_site}",
                     )
                     e_primegov_base = st.text_input(
                         "PrimeGov API Base URL",
                         value=cfg.get("primegov_api_base", ""),
-                        key="e_primegov_base",
+                        key=f"e_primegov_base_{edit_site}",
                     )
 
                     st.divider()
                     st.markdown("**Crawl Settings**")
                     ec1, ec2, ec3 = st.columns(3)
-                    e_max_depth = ec1.number_input("Max Depth", min_value=1, max_value=10, value=cfg.get("max_depth", 3), key="e_depth")
-                    e_max_pages = ec2.number_input("Max Pages", min_value=10, max_value=1000, value=cfg.get("max_pages", 200), key="e_pages")
-                    e_delay = ec3.number_input("Request Delay (s)", min_value=0.5, max_value=10.0, value=float(cfg.get("request_delay_seconds", 1.0)), step=0.5, key="e_delay")
+                    e_max_depth = ec1.number_input("Max Depth", min_value=1, max_value=10, value=cfg.get("max_depth", 3), key=f"e_depth_{edit_site}")
+                    e_max_pages = ec2.number_input("Max Pages", min_value=10, max_value=1000, value=cfg.get("max_pages", 200), key=f"e_pages_{edit_site}")
+                    e_delay = ec3.number_input("Request Delay (s)", min_value=0.5, max_value=10.0, value=float(cfg.get("request_delay_seconds", 1.0)), step=0.5, key=f"e_delay_{edit_site}")
 
                     st.divider()
                     # Seeds — format existing seeds for editing
@@ -659,13 +694,13 @@ with tab_sites:
                         "Seed URLs (one per line, format: url | category | label)",
                         value="\n".join(existing_seeds_lines),
                         height=150,
-                        key="e_seeds_text",
+                        key=f"e_seeds_text_{edit_site}",
                     )
 
                     e_domains_text = st.text_input(
                         "Allowed Domains (comma-separated)",
                         value=", ".join(cfg.get("allowed_domains", [])),
-                        key="e_domains",
+                        key=f"e_domains_{edit_site}",
                     )
 
                     st.divider()
@@ -673,19 +708,20 @@ with tab_sites:
                         "Priority URL Patterns (one per line)",
                         value="\n".join(cfg.get("priority_patterns", [])),
                         height=100,
-                        key="e_priority",
+                        key=f"e_priority_{edit_site}",
                     )
                     e_ignore_text = st.text_area(
                         "Ignore URL Patterns (one per line)",
                         value="\n".join(cfg.get("ignore_patterns", [])),
                         height=100,
-                        key="e_ignore",
+                        key=f"e_ignore_{edit_site}",
                     )
 
                     submitted_edit = st.form_submit_button("💾 Save Changes", type="primary")
 
                     if submitted_edit:
                         seeds = []
+                        skipped_seed_lines = []
                         for line in (e_seeds_text or "").strip().splitlines():
                             parts = [p.strip() for p in line.split("|")]
                             if len(parts) >= 1 and parts[0]:
@@ -695,31 +731,50 @@ with tab_sites:
                                 if len(parts) >= 3:
                                     seed["label"] = parts[2]
                                 seeds.append(seed)
+                            elif line.strip():
+                                skipped_seed_lines.append(line)
 
                         domains = [d.strip() for d in (e_domains_text or "").split(",") if d.strip()]
                         priority = [p.strip() for p in (e_priority_text or "").splitlines() if p.strip()]
                         ignore = [p.strip() for p in (e_ignore_text or "").splitlines() if p.strip()]
 
-                        updated = {
-                            "name": edit_site,
-                            "display_name": e_display,
-                            "base_url": e_base_url,
-                            "default_agency": e_agency,
-                            "default_geography": e_geo,
-                            "crawler_mode": e_crawler_mode,
-                            "allowed_domains": domains,
-                            "seeds": seeds,
-                            "priority_patterns": priority,
-                            "ignore_patterns": ignore,
-                            "max_depth": e_max_depth,
-                            "max_pages": e_max_pages,
-                            "request_delay_seconds": e_delay,
-                        }
-                        if e_crawler_mode == "primegov" and e_primegov_base:
-                            updated["primegov_api_base"] = e_primegov_base
+                        errors = _validate_site_form(
+                            base_url=e_base_url, domains=domains, seeds=seeds,
+                        )
+                        if errors:
+                            for msg in errors:
+                                st.error(msg)
+                        else:
+                            if skipped_seed_lines:
+                                st.warning(
+                                    f"Skipped {len(skipped_seed_lines)} unparseable seed line(s): "
+                                    f"{skipped_seed_lines}"
+                                )
 
-                        save_site_config(edit_site, updated)
-                        st.success(f"Site '{edit_site}' updated!")
+                            updated = {
+                                "name": edit_site,
+                                "display_name": e_display,
+                                "base_url": e_base_url,
+                                "default_agency": e_agency,
+                                "default_geography": e_geo,
+                                "crawler_mode": e_crawler_mode,
+                                "allowed_domains": domains,
+                                "seeds": seeds,
+                                "priority_patterns": priority,
+                                "ignore_patterns": ignore,
+                                "max_depth": e_max_depth,
+                                "max_pages": e_max_pages,
+                                "request_delay_seconds": e_delay,
+                            }
+                            # Preserve neighborhoods if site has them (kept across edits)
+                            existing_cfg = load_site_config(edit_site)
+                            if existing_cfg.get("neighborhoods"):
+                                updated["neighborhoods"] = existing_cfg["neighborhoods"]
+                            if e_crawler_mode == "primegov" and e_primegov_base:
+                                updated["primegov_api_base"] = e_primegov_base
+
+                            save_site_config(edit_site, updated)
+                            st.success(f"Site '{edit_site}' updated!")
                         st.rerun()
 
 
