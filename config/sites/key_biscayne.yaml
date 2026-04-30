@@ -1,0 +1,81 @@
+name: key_biscayne
+display_name: "Village of Key Biscayne"
+base_url: "https://www.keybiscayne.fl.gov"
+default_agency: "Village of Key Biscayne"
+default_geography: "Key Biscayne, FL"
+
+crawler_mode: "default"
+
+allowed_domains:
+  - "keybiscayne.fl.gov"
+  - "www.keybiscayne.fl.gov"
+  - "files.keybiscayne.fl.gov"
+
+seeds:
+  - url: "https://www.keybiscayne.fl.gov/government/agendas_minutes.php"
+    category: meetings
+    label: "Agendas & Minutes"
+  - url: "https://www.keybiscayne.fl.gov/services/finance/budgets.php"
+    category: budget
+    label: "Budgets"
+  - url: "https://www.keybiscayne.fl.gov/services/procurement/index.php"
+    category: procurement
+    label: "Procurement"
+  - url: "https://www.keybiscayne.fl.gov/elevating_our_island_paradise/program_library/index.php"
+    category: cip
+    label: "Capital Program Library"
+  - url: "https://www.keybiscayne.fl.gov/services/public_works/index.php"
+    category: cip
+    label: "Public Works"
+  - url: "https://www.keybiscayne.fl.gov/services/public_works/stormwater.php"
+    category: cip
+    label: "Stormwater"
+  - url: "https://www.keybiscayne.fl.gov/services/public_works/utility.php"
+    category: cip
+    label: "Utilities"
+  - url: "https://www.keybiscayne.fl.gov/services/public_works/resiliency_sustainability/index.php"
+    category: cip
+    label: "Resiliency & Sustainability"
+
+priority_patterns:
+  - "/agendas_minutes"
+  - "/procurement/"
+  - "/finance/"
+  - "/budget"
+  - "/public_works/"
+  - "/elevating_our_island_paradise/"
+  - "/program_library/"
+  - "/stormwater"
+  - "/utility"
+  - "/resiliency"
+  - "/agenda"
+  - "/minute"
+  - "/capital"
+
+ignore_patterns:
+  - "/parks_recreation/"
+  - "/communications/"
+  - "/code_compliance/"
+  - "/business_license"
+  - "/human_resources/"
+  - "/passport"
+  - "/news"
+  - "/calendar.php"
+  - "/elections/"
+  - "/advisory_boards/"
+  - "/fire_rescue/"
+  - "/police/"
+  - "/village_attorney"
+  - "/legislative_delegation"
+  - ".jpg"
+  - ".jpeg"
+  - ".png"
+  - ".gif"
+  - ".css"
+  - ".js"
+  - ".woff"
+  - ".ico"
+
+max_depth: 3
+max_pages: 200
+request_delay_seconds: 1.5
