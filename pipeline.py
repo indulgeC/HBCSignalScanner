@@ -30,7 +30,7 @@ from classifiers.rules import (
     extract_geography,
     extract_meeting_date,
 )
-from classifiers.llm_enrichment import enrich_signal
+from classifiers.llm_enrichment import enrich_signal, validate_credentials
 from classifiers.project_tracker import track_and_merge
 from models.signal import Signal
 from exporters.excel import export_excel, export_csv
@@ -43,13 +43,21 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def load_yaml(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Config file not found: {path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in {path}: {e}") from e
 
 
 def load_site_config(site_name: str, config_dir: str = "config") -> dict:
     path = os.path.join(config_dir, "sites", f"{site_name}.yaml")
-    return load_yaml(path)
+    cfg = load_yaml(path)
+    if not cfg:
+        raise ValueError(f"Site config '{site_name}' is empty: {path}")
+    return cfg
 
 
 def load_sectors_config(config_dir: str = "config") -> dict:
@@ -124,6 +132,16 @@ class SignalPipeline:
         )
         self._progress(0.02, "Starting pipeline...")
 
+        # Validate LLM credentials up front so a bad key fails fast,
+        # instead of silently degrading every signal to rule-only enrichment.
+        if self.use_llm:
+            ok, err = validate_credentials(self.llm_api_key, self.llm_model)
+            if not ok:
+                raise RuntimeError(
+                    f"AI enrichment is enabled but the Anthropic API check failed: {err}. "
+                    f"Either fix the key/model or disable AI enrichment to run in rule-only mode."
+                )
+
         n_sites = max(len(self.site_names), 1)
         site_budget = 0.85 / n_sites   # sites occupy 2% – 87% of progress
 
@@ -179,6 +197,7 @@ class SignalPipeline:
 
         default_agency = site_cfg.get("default_agency", "")
         default_geo = site_cfg.get("default_geography", "")
+        neighborhoods = site_cfg.get("neighborhoods", []) or []
 
         self._progress(base_pct, f"[{site_name}] Starting crawl...")
 
@@ -238,6 +257,14 @@ class SignalPipeline:
         logger.info("Site %s: %d relevant chunks (threshold=%.2f)",
                      site_name, len(relevant), self.relevance_threshold)
 
+        if all_chunks and not relevant:
+            logger.warning(
+                "Site %s: 0 of %d chunks passed the relevance threshold (%.2f). "
+                "Try lowering --threshold, broadening sector keywords in "
+                "config/sectors.yaml, or expanding crawler seeds/priority_patterns.",
+                site_name, len(all_chunks), self.relevance_threshold,
+            )
+
         # ── 4. CLASSIFY + ENRICH each chunk ──────────────────────────
         n_rel = len(relevant)
         classify_label = "Classifying + AI enriching" if self.use_llm else "Classifying"
@@ -246,7 +273,10 @@ class SignalPipeline:
             f"[{site_name}] {classify_label} {n_rel} signals...",
         )
         for i, (chunk, cr, sector, rel_score) in enumerate(relevant):
-            signal = self._build_signal(chunk, cr, sector, rel_score, default_agency, default_geo)
+            signal = self._build_signal(
+                chunk, cr, sector, rel_score,
+                default_agency, default_geo, neighborhoods,
+            )
             self.signals.append(signal)
             # Update progress periodically (every few items) to avoid UI spam
             if n_rel > 0 and (i % 3 == 0 or i == n_rel - 1):
@@ -276,6 +306,7 @@ class SignalPipeline:
         rel_score: float,
         default_agency: str,
         default_geo: str,
+        neighborhoods: Optional[List[str]] = None,
     ) -> Signal:
         text = chunk.text
 
@@ -289,7 +320,7 @@ class SignalPipeline:
         friction = infer_friction(text)
         trigger = extract_trigger_event(text)
         agency = extract_agency(text, default_agency)
-        geography = extract_geography(text, default_geo)
+        geography = extract_geography(text, default_geo, neighborhoods=neighborhoods)
         meeting_date = extract_meeting_date(text, chunk.date)
 
         has_amount = bool(best_amount)

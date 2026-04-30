@@ -21,6 +21,9 @@ _client = None
 _client_api_key = None
 
 
+DEFAULT_MODEL = "claude-sonnet-4-6"
+
+
 def _get_client(api_key: str = ""):
     global _client, _client_api_key
     # Recreate client if api_key changed
@@ -36,6 +39,27 @@ def _get_client(api_key: str = ""):
             logger.warning("Anthropic client not available: %s", e)
             return None
     return _client
+
+
+def validate_credentials(api_key: str = "", model: str = "") -> tuple[bool, str]:
+    """Test the API key + model with a minimal call.
+
+    Returns (ok, error_message). Used by the pipeline before processing
+    so that a bad key surfaces immediately instead of silently degrading
+    every signal to rule-only enrichment.
+    """
+    client = _get_client(api_key)
+    if client is None:
+        return False, "Anthropic SDK not installed or API key missing."
+    try:
+        client.messages.create(
+            model=(model or DEFAULT_MODEL),
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ok"}],
+        )
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -64,7 +88,7 @@ def enrich_signal(
     if client is None:
         return _fallback(text, agency, sector, procurement_stage, amounts, rule_strength, rule_fit)
 
-    use_model = model or "claude-sonnet-4-20250514"
+    use_model = model or DEFAULT_MODEL
 
     amounts_str = ""
     if amounts:

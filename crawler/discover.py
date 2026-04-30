@@ -67,26 +67,46 @@ class SiteCrawler:
 
         self.visited: Set[str] = set()
         self.results: List[CrawlResult] = []
+        # Content hashes seen, used to drop pages whose body matches a page
+        # we already fetched. Catches the common pattern where a CMS serves
+        # the same fallback page (homepage, "not found" template) for any
+        # path that doesn't resolve, instead of returning 404.
+        self.seen_content_hashes: Set[str] = set()
 
     # ── Public API ────────────────────────────────────────────────────
 
     def crawl(self) -> List[CrawlResult]:
         """Run the full crawl starting from configured seeds."""
+        if not self.allowed:
+            logger.warning(
+                "Site '%s': allowed_domains is empty — every URL (including seeds) "
+                "will be rejected. Add at least one entry in the site YAML "
+                "(e.g. 'example.gov').",
+                self.cfg.get("name", "?"),
+            )
+
         queue: list[tuple[str, str, int]] = []     # (url, category, depth)
         for seed in self.cfg.get("seeds", []):
             url = seed["url"] if isinstance(seed, dict) else seed
             cat = seed.get("category", "") if isinstance(seed, dict) else ""
             queue.append((url, cat, 0))
+            if not self._is_allowed(url):
+                logger.warning(
+                    "Seed URL %s is not in allowed_domains %s — it will be skipped.",
+                    url, sorted(self.allowed),
+                )
 
         if self.progress_callback:
             self.progress_callback(0.0, f"Starting crawl (max {self.max_pages} pages)...")
 
+        n_dropped_disallowed = 0
         while queue and len(self.results) < self.max_pages:
             url, cat, depth = queue.pop(0)
             norm = self._normalize(url)
             if norm in self.visited:
                 continue
             if not self._is_allowed(url):
+                n_dropped_disallowed += 1
                 continue
             if self._should_ignore(url):
                 continue
@@ -96,6 +116,22 @@ class SiteCrawler:
             if result.error:
                 logger.warning("fetch error %s: %s", url, result.error)
                 continue
+
+            # Dedupe by content hash. Many municipal CMSes return a generic
+            # fallback page (often the homepage) for any unknown path — same
+            # body for many different URLs. Without this check, we'd queue
+            # all the bogus URLs' "links" and waste the crawl budget on
+            # identical pages.
+            if "html" in result.content_type:
+                body_hash = self._content_hash(result.html)
+                if body_hash and body_hash in self.seen_content_hashes:
+                    logger.info(
+                        "skipping %s — body matches an earlier page (hash=%s)",
+                        url, body_hash[:8],
+                    )
+                    continue
+                if body_hash:
+                    self.seen_content_hashes.add(body_hash)
 
             self.results.append(result)
             logger.info(
@@ -114,19 +150,26 @@ class SiteCrawler:
             # Extract child links from HTML pages
             if "html" in result.content_type and depth < self.max_depth:
                 child_links = self._extract_links(result.html, result.final_url)
+                # Sort so high-value links are appended first; this keeps a
+                # priority preference *within the same parent* without
+                # jumping ahead of already-queued depth-0 seeds (which would
+                # starve later seeds entirely).
+                child_links.sort(key=lambda u: (0 if self._is_priority(u) else 1))
                 for link in child_links:
                     n = self._normalize(link)
                     if n not in self.visited:
                         child_cat = self._infer_category(link, cat)
-                        # Prioritise high-value links
-                        if self._is_priority(link):
-                            queue.insert(0, (link, child_cat, depth + 1))
-                        else:
-                            queue.append((link, child_cat, depth + 1))
+                        queue.append((link, child_cat, depth + 1))
 
             time.sleep(self.delay)
 
         logger.info("Crawl complete: %d results", len(self.results))
+        if n_dropped_disallowed > 0:
+            logger.info(
+                "Crawl dropped %d URL(s) outside allowed_domains %s "
+                "(use logger.debug if you want each one).",
+                n_dropped_disallowed, sorted(self.allowed),
+            )
         if self.progress_callback:
             self.progress_callback(1.0, f"Crawl complete: {len(self.results)} pages")
         return self.results
@@ -185,14 +228,58 @@ class SiteCrawler:
             full = urljoin(base_url, href)
             # Strip fragment
             full = full.split("#")[0]
+            full = self._canonicalize_url(full)
             if full and self._is_allowed(full):
                 links.append(full)
         return links
 
     # ── Helpers ───────────────────────────────────────────────────────
 
+    @staticmethod
+    def _collapse_dup_segments(path: str) -> str:
+        """Collapse consecutive duplicate path segments.
+
+        Some sites publish nav HTML with relative links that don't include
+        a leading slash, so urljoin produces paths like
+        /government/government/government/foo when the crawler is already
+        inside /government/. We collapse those so we don't re-crawl
+        identical content under different URLs.
+        """
+        parts = path.split("/")
+        out: list[str] = []
+        for p in parts:
+            if out and out[-1] == p and p:
+                continue
+            out.append(p)
+        return "/".join(out)
+
+    def _canonicalize_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        new_path = self._collapse_dup_segments(parsed.path)
+        return parsed._replace(path=new_path).geturl()
+
+    @staticmethod
+    def _content_hash(html: str) -> str:
+        """Hash of the main body text (post-nav/header/footer strip).
+
+        Used to dedupe URLs that return the same fallback content.
+        Returns "" if the page can't be parsed.
+        """
+        if not html:
+            return ""
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup.find_all(
+                ["nav", "header", "footer", "script", "style", "noscript"]
+            ):
+                tag.decompose()
+            text = soup.get_text(separator=" ", strip=True)
+            return hashlib.md5(text.encode("utf-8", errors="ignore")).hexdigest()
+        except Exception:
+            return ""
+
     def _normalize(self, url: str) -> str:
-        return url.rstrip("/").lower()
+        return self._canonicalize_url(url).rstrip("/").lower()
 
     def _is_allowed(self, url: str) -> bool:
         host = urlparse(url).hostname or ""

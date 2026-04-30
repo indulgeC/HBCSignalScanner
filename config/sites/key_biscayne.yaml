@@ -4,6 +4,14 @@ base_url: "https://www.keybiscayne.fl.gov"
 default_agency: "Village of Key Biscayne"
 default_geography: "Key Biscayne, FL"
 
+# Site-specific sub-area names. Generic patterns
+# (village-wide, zone N, ward N, district N) are also always applied.
+neighborhoods:
+  - "Harbor Park"
+  - "Garden District"
+  - "Crandon Boulevard"
+  - "Biscayne Bay"
+
 crawler_mode: "default"
 
 allowed_domains:

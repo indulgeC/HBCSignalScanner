@@ -422,8 +422,8 @@ def extract_trigger_event(text: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 _AGENCY_PATTERNS = [
-    r"(?:City\s+of\s+[\w\s]+?)(?=\s+(?:Commission|Department|Division|Office|Council))",
-    r"(?:Miami[-\s]Dade\s+(?:County|Water))",
+    r"(?:(?:City|Village|Town|County|Municipality|Borough)\s+of\s+[\w\s]+?)(?=\s+(?:Commission|Department|Division|Office|Council|Board))",
+    r"(?:[\w\s]+?\s+(?:County|District))(?=\s+(?:Water|Sewer|Stormwater|Public\s+Works))",
     r"(?:Department\s+of\s+[\w\s]+)",
 ]
 
@@ -436,20 +436,47 @@ def extract_agency(text: str, default: str) -> str:
     return default
 
 
-def extract_geography(text: str, default: str) -> str:
-    # Look for explicit geographic references
-    geo_pats = [
-        r"(?:city[-\s]?wide)", r"(?:district\s+\d+)",
-        r"(?:south\s+beach)", r"(?:north\s+beach)", r"(?:mid[-\s]?beach)",
-        r"(?:miami\s+beach)", r"(?:indian\s+creek)",
-    ]
-    for pat in geo_pats:
-        m = re.search(pat, text[:2000], re.I)
+# Generic sub-area patterns that work across any city
+_GENERIC_GEO_PATS = [
+    r"(?:city[-\s]?wide)",
+    r"(?:village[-\s]?wide)",
+    r"(?:district\s+\d+)",
+    r"(?:zone\s+\d+)",
+    r"(?:ward\s+\d+)",
+]
+
+
+def extract_geography(text: str, default: str, neighborhoods: list[str] | None = None) -> str:
+    """Try to find a sub-area mention in the text.
+
+    `neighborhoods` is an optional site-specific list of named areas
+    (e.g. ["South Beach", "Indian Creek"]). When provided, those names
+    are matched in addition to the generic patterns.
+    """
+    snippet = text[:2000]
+
+    # Site-specific neighborhood names (highest priority)
+    for name in (neighborhoods or []):
+        if not name:
+            continue
+        # Match as a whole phrase, case-insensitive, with flexible whitespace
+        pat = r"\b" + r"[\s\-]+".join(re.escape(p) for p in name.split()) + r"\b"
+        m = re.search(pat, snippet, re.I)
         if m:
             found = m.group(0).strip().title()
             if found.lower() not in default.lower():
                 return f"{default} ({found})"
             return default
+
+    # Generic patterns (city-wide, district N, zone N, …)
+    for pat in _GENERIC_GEO_PATS:
+        m = re.search(pat, snippet, re.I)
+        if m:
+            found = m.group(0).strip().title()
+            if found.lower() not in default.lower():
+                return f"{default} ({found})"
+            return default
+
     return default
 
 

@@ -34,8 +34,5 @@ data/output/
 Thumbs.db
 .DS_Store
 
-# Misc / junk
-{config/
-
 # Logs
 *.log

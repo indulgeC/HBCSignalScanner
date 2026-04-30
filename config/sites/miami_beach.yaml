@@ -4,6 +4,14 @@ base_url: "https://www.miamibeachfl.gov"
 default_agency: "City of Miami Beach"
 default_geography: "Miami Beach, FL"
 
+# Optional: site-specific sub-area names used by the geography extractor.
+# Generic patterns (city-wide, district N, zone N, ward N) are always applied.
+neighborhoods:
+  - "South Beach"
+  - "North Beach"
+  - "Mid Beach"
+  - "Indian Creek"
+
 # ── PrimeGov API configuration ──────────────────────────────────────
 # The meetings & agendas page embeds PrimeGov via iframe:
 #   https://miamibeachfl.primegov.com/public/portal
