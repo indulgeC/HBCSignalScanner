@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pipeline import SignalPipeline, load_yaml
 from models.signal import Signal
+from crawler.site_discovery import discover_site
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -540,14 +541,95 @@ with tab_sites:
 
     # ── Add new site ─────────────────────────────────────────────────
     with site_tab_new:
+        # ── Auto-fill from URL (outside the form so the button can rerun) ──
+        if "_autofill_notes" in st.session_state:
+            mode = st.session_state.get("_autofill_mode", "")
+            n_seeds = st.session_state.get("_autofill_seed_count", 0)
+            st.success(
+                f"Auto-filled via {mode}: {n_seeds} seeds detected. "
+                "Review the form below — edit anything wrong, then save."
+            )
+            with st.expander("Discovery details", expanded=False):
+                for note in st.session_state["_autofill_notes"]:
+                    st.write(f"• {note}")
+
+        with st.container(border=True):
+            st.markdown("**🪄 Quick start: auto-fill from a URL**")
+            af_url = st.text_input(
+                "Homepage URL",
+                placeholder="https://www.example.gov/",
+                key="autofill_url",
+                label_visibility="collapsed",
+            )
+            af_env_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            af_default_ai = bool(llm_api_key or af_env_key)
+            af_use_ai = st.checkbox(
+                "Use AI to better classify links (~$0.01 per call, uses your Anthropic key)",
+                value=af_default_ai,
+                key="autofill_use_ai",
+                disabled=not (llm_api_key or af_env_key),
+                help=(
+                    "Heuristic mode finds standard patterns (/agendas, /procurement, /cip, /budget). "
+                    "AI mode also catches named programs like 'Elevating Our Island Paradise' that "
+                    "pure regex would miss. Disabled if no API key is configured in the sidebar or env."
+                ),
+            )
+            if st.button("🪄 Auto-fill", key="autofill_btn", type="secondary"):
+                if not af_url.strip():
+                    st.error("Enter a homepage URL first.")
+                else:
+                    with st.spinner("Discovering site structure..."):
+                        try:
+                            af_key = llm_api_key or af_env_key
+                            result = discover_site(
+                                af_url.strip(),
+                                use_llm=af_use_ai,
+                                api_key=af_key,
+                                llm_model=llm_model or "",
+                            )
+                            # Push detected values into form widget state
+                            st.session_state["new_name"] = result.name
+                            st.session_state["new_display"] = result.display_name
+                            st.session_state["new_base_url"] = result.base_url
+                            st.session_state["new_agency"] = result.default_agency
+                            st.session_state["new_geo"] = result.default_geography
+                            st.session_state["new_crawler_mode"] = result.crawler_mode
+                            st.session_state["new_primegov_base"] = result.primegov_api_base
+                            st.session_state["new_domains"] = ", ".join(result.allowed_domains)
+                            st.session_state["new_seeds_text"] = "\n".join(
+                                f"{s['url']} | {s.get('category', '')} | {s.get('label', '')}"
+                                for s in result.seeds
+                            )
+                            # Stash auto-discovered fields the form doesn't expose
+                            st.session_state["_autofill_priority_patterns"] = result.priority_patterns
+                            st.session_state["_autofill_ignore_patterns"] = result.ignore_patterns
+                            st.session_state["_autofill_neighborhoods"] = result.neighborhoods
+                            # Notes for next render
+                            st.session_state["_autofill_notes"] = result.notes
+                            st.session_state["_autofill_mode"] = "AI" if result.used_llm else "heuristic"
+                            st.session_state["_autofill_seed_count"] = len(result.seeds)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Auto-fill failed: {e}")
+
         with st.form("new_site_form"):
             st.subheader("New Site")
 
-            new_name = st.text_input("Site ID (e.g. miami_beach)", placeholder="city_name")
-            new_display = st.text_input("Display Name", placeholder="City of Miami Beach")
-            new_base_url = st.text_input("Base URL", placeholder="https://www.example.gov")
-            new_agency = st.text_input("Default Agency", placeholder="City of Miami Beach")
-            new_geo = st.text_input("Default Geography", placeholder="Miami Beach, FL")
+            new_name = st.text_input(
+                "Site ID (e.g. miami_beach)", placeholder="city_name", key="new_name",
+            )
+            new_display = st.text_input(
+                "Display Name", placeholder="City of Miami Beach", key="new_display",
+            )
+            new_base_url = st.text_input(
+                "Base URL", placeholder="https://www.example.gov", key="new_base_url",
+            )
+            new_agency = st.text_input(
+                "Default Agency", placeholder="City of Miami Beach", key="new_agency",
+            )
+            new_geo = st.text_input(
+                "Default Geography", placeholder="Miami Beach, FL", key="new_geo",
+            )
 
             st.divider()
             st.markdown("**Crawler Mode**")
@@ -636,7 +718,22 @@ with tab_sites:
                     if new_crawler_mode == "primegov" and new_primegov_base:
                         cfg["primegov_api_base"] = new_primegov_base
 
+                    # Carry over auto-discovered fields the form doesn't expose
+                    autofill_pri = st.session_state.get("_autofill_priority_patterns")
+                    if autofill_pri:
+                        cfg["priority_patterns"] = autofill_pri
+                    autofill_ign = st.session_state.get("_autofill_ignore_patterns")
+                    if autofill_ign:
+                        cfg["ignore_patterns"] = autofill_ign
+                    autofill_nbh = st.session_state.get("_autofill_neighborhoods")
+                    if autofill_nbh:
+                        cfg["neighborhoods"] = autofill_nbh
+
                     save_site_config(new_name, cfg)
+                    # Clear autofill state so the next "Add New Site" starts blank
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("_autofill_"):
+                            del st.session_state[k]
                     st.success(f"Site '{new_name}' saved!")
                     st.rerun()
 
